@@ -14,10 +14,10 @@ import datetime
 
 # rendering into a log file
 # Redirects all print statements to .txt 
-sys.stdout = open(r'C:\DevTools\Projects\exile\sync_log.txt', 'a')
-sys.stderr = sys.stdout
+# sys.stdout = open(r'C:\DevTools\Projects\exile\sync_log.txt', 'a')
+# sys.stderr = sys.stdout
 
-print(f"\n--- Sync Attempt: {datetime.datetime.now()} ---")
+# print(f"\n--- Sync Attempt: {datetime.datetime.now()} ---")
 
 # configuration
 CALENDAR_SOURCES = [
