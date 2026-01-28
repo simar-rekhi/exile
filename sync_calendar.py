@@ -8,22 +8,29 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-
 import sys
 import datetime
+import time
 
 # rendering into a log file
 # Redirects all print statements to .txt 
-# sys.stdout = open(r'C:\DevTools\Projects\exile\sync_log.txt', 'a')
-# sys.stderr = sys.stdout
+#sys.stdout = open(r'C:\DevTools\Projects\exile\sync_log.txt', 'a')
+#sys.stderr = sys.stdout
 
-# print(f"\n--- Sync Attempt: {datetime.datetime.now()} ---")
+#print(f"\n--- Sync Attempt: {datetime.datetime.now()} ---")
+
 
 # configuration
 CALENDAR_SOURCES = [
-    {"name": "eLearning", "url": "add your ics link here"},
-    {"name": "Teams", "url": "add your ics link here"},
+    {"name": "eLearning", "url": "--------------------------elearning ics url------------"},
+    {"name": "Teams", "url": "--------------------------teams ics url---------------------"},
 ]
+
+# target timezone
+TIMEZONE = 'America/Chicago'
+
+# course code regex pattern
+COURSE_REGEX = r'\b(CS|MATH|PHYS|FILM|GOVT|HIST|BIOL|CHEM|CE|SE)\s?-?(\d{4})\b'
 
 # scopes reqd by google calendar api
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -45,78 +52,90 @@ def get_google_service():
             token.write(creds.to_json())
     return build('calendar', 'v3', credentials=creds)
 
+def extract_course_tag(event):
 
-def parse_course_code(event):
+    """ scans event for course codes """
 
-    """ attempt to find a course code. designed to handle variable lengths. return a clean tag """
-
-    # combine title + descrip to search for the code
-    text_to_search = (event.name or "") + " " + (event.description or "")
-
-
-    # regex usage - look for patterns CS 3345, CS-3345, CS3345
-    match = re.search(r'\b(CS|MATH|PHYS|FILM|GOVT|HIST|BIOL|CHEM|CE|SE)\s?-?(\d{4})\b', text_to_search, re.IGNORECASE)
-
+    full_text = (event.name or "") + " " + (event.description or "")
+    match = re.search(COURSE_REGEX, full_text, re.IGNORECASE)
     if match:
         return f"[{match.group(1).upper()} {match.group(2)}]"
     return None
 
 
-def sync_calendar():
-    service = get_google_service()
-    
+def sync_calendars():
+    print("Authenticating with Google...")
+    try:
+        service = get_google_service()
+    except Exception as e:
+        print(f"CRITICAL AUTH ERROR: {e}")
+        return
+
     for source in CALENDAR_SOURCES:
-        print(f"Fetching {source['name']}...")
+        if "INSERT_YOUR" in source['url']:
+            print(f"Skipping {source['name']} (URL not set)")
+            continue
+
+        print(f"--- Processing {source['name']} ---")
         try:
-            c = Calendar(requests.get(source['url']).text)
+            response = requests.get(source['url'])
+            response.raise_for_status()
+            c = Calendar(response.text)
         except Exception as e:
-            print(f"Failed to fetch {source['name']}: {e}")
+            print(f"Error fetching {source['name']}: {e}")
             continue
 
         for event in c.events:
-            # 1. custom title logic
-            course_tag = parse_course_code(event)
-            new_summary = event.name
-            
-            # Only prepend if the tag isn't already there
-            if course_tag and not new_summary.startswith(course_tag):
-                new_summary = f"{course_tag} {new_summary}"
-
-            # 2. prevent duplicates
-            # We use the ICS UID but strip non-alphanumeric chars to satisfy Google's ID requirements
-            clean_id = re.sub(r'[^a-v0-9]', '', event.uid.lower())
-
-            # 3. Define the Event Body
-            event_body = {
-                'summary': new_summary,
-                'description': f"{event.description}\n\n(Source: {source['name']})",
-                'start': {'dateTime': event.begin.isoformat(), 'timeZone': 'America/Chicago'}, # Set your specific timezone
-                'end': {'dateTime': event.end.isoformat(), 'timeZone': 'America/Chicago'},
-                'id': clean_id,
-                
-                # 4. Custom Reminders (24h and 72h prior)
-                'reminders': {
-                    'useDefault': False,
-                    'overrides': [
-                        {'method': 'popup', 'minutes': 24 * 60},  # 24 hours
-                        {'method': 'popup', 'minutes': 72 * 60},  # 72 hours
-                    ],
-                },
-            }
+            # --- THE BRAKE PEDAL ---
+            # Pauses for 0.5 seconds to prevent "Rate Limit Exceeded"
+            time.sleep(0.5)
 
             try:
-                # Try to insert the event
-                service.events().insert(calendarId='primary', body=event_body).execute()
-                print(f"Created: {new_summary}")
-            except HttpError as error:
-                # If error 409 (Conflict), the event exists, so we update it
-                if error.resp.status == 409:
-                    service.events().update(calendarId='primary', eventId=clean_id, body=event_body).execute()
-                    print(f"Updated: {new_summary}")
+                # 1. Course Distinction
+                course_tag = extract_course_tag(event)
+                original_title = event.name or "Untitled Event"
+                if course_tag and not original_title.startswith(course_tag):
+                    new_summary = f"{course_tag} {original_title}"
                 else:
-                    print(f"An error occurred: {error}")
+                    new_summary = original_title
 
+                # 2. ID Cleanup
+                clean_id = re.sub(r'[^a-v0-9]', '', event.uid.lower())
 
+                # 3. Event Body
+                event_body = {
+                    'summary': new_summary,
+                    'description': f"{event.description}\n\n[Synced from {source['name']}]",
+                    'start': {'dateTime': event.begin.isoformat(), 'timeZone': TIMEZONE},
+                    'end': {'dateTime': event.end.isoformat(), 'timeZone': TIMEZONE},
+                    'id': clean_id,
+                    'reminders': {
+                        'useDefault': False,
+                        'overrides': [
+                            {'method': 'popup', 'minutes': 24 * 60},
+                            {'method': 'popup', 'minutes': 72 * 60},
+                        ],
+                    },
+                }
+
+                # 4. Push to Google
+                try:
+                    service.events().insert(calendarId='primary', body=event_body).execute()
+                    print(f"Created: {new_summary}")
+                except HttpError as error:
+                    # 409 means "Event exists", so we update it.
+                    if error.resp.status == 409:
+                        try:
+                            service.events().update(calendarId='primary', eventId=clean_id, body=event_body).execute()
+                            print(f"Updated: {new_summary}")
+                        except HttpError as update_error:
+                             print(f"Failed to update {new_summary}: {update_error}")
+                    else:
+                        print(f"API Error on {new_summary}: {error}")
+
+            except Exception as ev_err:
+                print(f"Skipping event due to internal error: {ev_err}")
 
 if __name__ == '__main__':
     sync_calendars()
+    print("Sync Complete.")
