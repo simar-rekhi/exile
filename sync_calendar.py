@@ -9,7 +9,15 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+import sys
+import datetime
 
+# rendering into a log file
+# Redirects all print statements to .txt 
+sys.stdout = open(r'C:\DevTools\Projects\exile\sync_log.txt', 'a')
+sys.stderr = sys.stdout
+
+print(f"\n--- Sync Attempt: {datetime.datetime.now()} ---")
 
 # configuration
 CALENDAR_SOURCES = [
