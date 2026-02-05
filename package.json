@@ -1,0 +1,24 @@
+{
+  "name": "blackboard-to-google-calendar",
+  "version": "1.0.0",
+  "description": "Scrape Blackboard calendar and sync to Google Calendar with course information",
+  "main": "bboard_to_gcal.js",
+  "scripts": {
+    "start": "node blackboard-to-gcal.js",
+    "setup": "node googleAuth_setup.js",
+    "test-scrape": "node test_scraper.js"
+  },
+  "keywords": [
+    "blackboard",
+    "google-calendar",
+    "puppeteer",
+    "scraper"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^21.7.0",
+    "googleapis": "^131.0.0",
+    "dotenv": "^16.3.1"
+  }
+}
